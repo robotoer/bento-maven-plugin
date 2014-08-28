@@ -21,13 +21,14 @@ package org.kiji.maven.plugins;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.FutureTask;
+import java.util.concurrent.Future;
 
 import com.google.common.util.concurrent.Uninterruptibles;
 
@@ -57,79 +58,90 @@ public final class ShellExecUtil {
    * @throws IOException if the command execution encounters and I/O failure.
    * @throws ExecutionException if process future can be uninterruptibly acquired.
    */
-  public static String executeCommand(String command) throws IOException, ExecutionException {
-    return ProcessWaitForCallable.executeCommand(command);
-  }
+  public static ShellResult executeCommand(
+      final String command
+  ) throws IOException, ExecutionException {
+    final ExecutorService executor = Executors.newFixedThreadPool(2);
 
-  /**
-   * Execute shell command and return the child process handle.
-   *
-   * @param command to execute.
-   * @return child process handle.
-   * @throws IOException if the command execution encounters and I/O failure.
-   */
-  public static Process executeProcess(String command) throws IOException {
-    return Runtime.getRuntime().exec(command);
-  }
+    final Process commandProcess = Runtime.getRuntime().exec(command);
 
-  /**
-   * Execute a process and return its stdout.
-   */
-  public static class ProcessWaitForCallable implements Callable<String> {
-    /** Proces handle. */
-    private Process mProcess;
+    final InputStreamReaderCallable stdoutCallable =
+        new InputStreamReaderCallable(commandProcess.getInputStream());
+    final InputStreamReaderCallable stderrCallable =
+        new InputStreamReaderCallable(commandProcess.getErrorStream());
+    final Future<String> stdoutFuture = executor.submit(stdoutCallable);
+    final Future<String> stderrFuture = executor.submit(stderrCallable);
 
-    /**
-     * Construct process from shell command and run it.
-     *
-     * @param command to execute.
-     * @throws IOException if running the command fails.
-     */
-    public ProcessWaitForCallable(String command) throws IOException {
-      this.mProcess = Runtime.getRuntime().exec(command);
-    }
-
-    /**
-     * Wait for shell command to finish and return it's stdout.
-     *
-     * @return standard out.
-     * @throws Exception if the process wait fails or the standard out can not be collected.
-     */
-    @Override
-    public String call() throws Exception {
-      mProcess.waitFor();
-      BufferedReader stdOutReader = null;
-      try {
-        stdOutReader = new BufferedReader(
-            new InputStreamReader(mProcess.getInputStream(), Charset.defaultCharset()));
-        final StringBuffer stdOut = new StringBuffer();
-        String stdOutLine = stdOutReader.readLine();
-        while (stdOutLine != null) {
-          stdOut.append(stdOutLine + "\n");
-          stdOutLine = stdOutReader.readLine();
+    boolean interrupted = false;
+    int exitCode;
+    try {
+      while (true) {
+        try {
+          exitCode = commandProcess.waitFor();
+          break;
+        } catch (final InterruptedException ise) {
+          interrupted = true;
         }
-        return stdOut.toString();
-      } finally {
-        if (null != stdOutReader) {
-          stdOutReader.close();
-        }
+      }
+    } finally {
+      if (interrupted) {
+        Thread.currentThread().interrupt();
       }
     }
 
+    return new ShellResult(
+        Uninterruptibles.getUninterruptibly(stderrFuture),
+        Uninterruptibles.getUninterruptibly(stdoutFuture),
+        exitCode
+    );
+  }
+
+  /**
+   * Callable that reads an input stream.
+   */
+  public static class InputStreamReaderCallable implements Callable<String> {
     /**
-     * Execute a shell command, uninterruptibly wait for completion, and return the stdout.
-     *
-     * @param command to execute.
-     * @return standard out.
-     * @throws IOException if running command fails.
-     * @throws ExecutionException if process future can be uninterruptibly acquired.
+     * Input stream to read.
      */
-    public static String executeCommand(String command) throws IOException, ExecutionException {
-      FutureTask<String> processFuture =
-          new FutureTask<String>(new ProcessWaitForCallable(command));
-      ExecutorService executor = Executors.newFixedThreadPool(1);
-      executor.execute(processFuture);
-      return Uninterruptibles.getUninterruptibly(processFuture);
+    private final InputStream mInputStream;
+
+    /**
+     * Construct new callable that reads an input stream.
+     *
+     * @param inputStream The stream to read.
+     */
+    public InputStreamReaderCallable(final InputStream inputStream) {
+      mInputStream = inputStream;
     }
+
+    /** {@inheritDoc} */
+    @Override
+    public String call() throws Exception {
+      return readInputStream(mInputStream);
+    }
+  }
+
+  /**
+   * Reads an input stream as a string.
+   *
+   * @param inputStream to read.
+   * @return the contents of the input stream as a string.
+   * @throws IOException if there is an error reading the stream.
+   */
+  private static String readInputStream(final InputStream inputStream) throws IOException {
+    final StringBuilder outputBuilder = new StringBuilder();
+    final BufferedReader reader =
+        new BufferedReader(new InputStreamReader(inputStream, Charset.defaultCharset()));
+    try {
+      String outputLine = reader.readLine();
+      while (outputLine != null) {
+        outputBuilder.append(outputLine).append(System.getProperty("line.separator"));
+        outputLine = reader.readLine();
+      }
+    } finally {
+      reader.close();
+    }
+
+    return outputBuilder.toString();
   }
 }

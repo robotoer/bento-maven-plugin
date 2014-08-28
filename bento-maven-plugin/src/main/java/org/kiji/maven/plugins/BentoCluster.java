@@ -21,33 +21,58 @@ package org.kiji.maven.plugins;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 
-import org.apache.commons.io.FileUtils;
+import com.google.common.base.Preconditions;
 import org.apache.maven.plugin.logging.Log;
 
 /**
  * An in-process way to start and stop a Bento cluster running in a Docker container. This class
  * wraps commands sent to the bento script in the Bento cluster installation.
  */
-public enum BentoCluster {
+public final class BentoCluster {
   /** The singleton instance. */
-  INSTANCE;
+  private static BentoCluster instance = null;
 
   /**
-   * Format for running bento commands: {path/to/bento-cluster/bin/bento} {command} -n {bento-name}.
+   * Initializes the singleton.
+   *
+   * @param bentoName name of the Bento cluster container.
+   * @param venvRoot to the python virtualenv to install bento-cluster to.
+   * @param log the maven log.
    */
-  private static final String BENTO_SHELL_SCRIPT_FORMAT = "%s %s -n %s";
+  public static void setInstance(final String bentoName, final File venvRoot, final Log log) {
+    Preconditions.checkState(
+        venvRoot.mkdirs(),
+        "Failed to create venv root: %s",
+        venvRoot.getAbsolutePath()
+    );
+    instance = new BentoCluster(bentoName, venvRoot, log);
+  }
+
   /**
-   * Format for querying supervisorctl to check whether the Bento cluster components are up. The
-   * the only required configurable component is the bento container name.
+   * Returns true if the singleton has been initialized.
+   *
+   * @return true if the singleton has been initialized.
    */
-  private static final String SUPERVISORCTL_HDFS_INIT_STATUS =
-      "supervisorctl -c %s -s http://bento-%s:9001 status hdfs-init";
+  public static boolean isInstanceSet() {
+    return instance != null;
+  }
+
+  /**
+   * Gets the singleton instance.
+   *
+   * @return the singleton instance.
+   */
+  public static BentoCluster getInstance() {
+    return instance;
+  }
 
   /**
    * Bento commands.
    */
-  private static final String BENTO_CREATE = "create";
+  private static final String BENTO_CREATE = "create --output-config-dir=%s";
+  private static final String BENTO_START = "start --output-config-dir=%s";
   private static final String BENTO_STOP = "stop";
   private static final String BENTO_RM = "rm";
   private static final String BENTO_STATUS = "status";
@@ -55,64 +80,73 @@ public enum BentoCluster {
   /** Hope the the bento cluster components all start in 120 seconds. */
   private static final long STARTUP_TIMEOUT_MS = 120000L;
 
-  /** Where on this machine the bento-cluster installation lives. */
-  private File mBentoDirPath;
-
   /** Name of the Bento cluster container. */
-  private String mBentoName;
+  private final String mBentoName;
+
+  /** Path to the python virtualenv to install bento-cluster to. */
+  private final File mVenvRoot;
 
   /** The maven log used to communicate with the maven user. */
-  private Log mLog;
+  private final Log mLog;
 
   /**
-   * Returns a bento script shell command to execute.
+   * Constructs a bento cluster.
    *
-   * @param command to run in shell such as create, stop, rm, etc.
-   * @return a formatted string command to execute on the shell.
+   * @param bentoName name of the Bento cluster container.
+   * @param venvRoot to the python virtualenv to install bento-cluster to.
+   * @param log the maven log.
    */
-  private String bentoCommand(String command) {
-    return String.format(
-        BENTO_SHELL_SCRIPT_FORMAT,
-        new File(new File(mBentoDirPath, "bin"), "bento").toString(),
-        command,
-        mBentoName
-    );
+  private BentoCluster(final String bentoName, final File venvRoot, final Log log) {
+    mBentoName = bentoName;
+    mVenvRoot = venvRoot;
+    mLog = log;
   }
-
-  /**
-   * Disable default constructor.
-   */
-  private BentoCluster() {}
 
   /**
    * Execute command to start the Bento cluster container within a timeout.
    *
-   * @param log The maven log.
-   * @param bentoDirPath path to the bento-cluster environment installation.
-   * @param bentoName name of the Bento cluster container.
+   * @param configDir to write bento hadoop/hbase configuration files to.
+   * @param createBento should be set to false to skip creating the bento container.
    * @throws Exception if the Bento cluster container could not be started in the specified timeout.
    */
-  public void start(Log log, File bentoDirPath, String bentoName) throws Exception {
-    mLog = log;
-    mBentoDirPath = bentoDirPath;
-    mBentoName = bentoName;
-
+  public void start(final File configDir, final boolean createBento) throws Exception {
     if (isRunning()) {
       throw new RuntimeException("Cluster already running.");
     }
 
-    // Start Bento cluster by running the Bento create script.
-    mLog.info(String.format("Starting the Bento cluster '%s'...", mBentoName));
-    mLog.info(ShellExecUtil.executeCommand(bentoCommand(BENTO_CREATE)));
+    // Create a virtualenv for this cluster.
+    ShellExecUtil.executeCommand(
+        String.format("env python3 -m venv %s", mVenvRoot.getAbsolutePath())
+    );
+//    ShellExecUtil.executeCommand(
+//        String.format("chmod +x %s/activate", mVenvRoot.getAbsolutePath())
+//    );
+
+    // Install bento-cluster in this virtualenv.
+    ShellExecUtil.executeCommand(
+        venvCommand("env python3 -m pip install kiji-bento-cluster -i http://localhost/simple"));
+
+    if (createBento) {
+      // Create Bento cluster by running the 'bento create' script.
+      mLog.info(String.format("Starting the Bento cluster '%s'...", mBentoName));
+      executeAndLogCommand(bentoCommand(String.format(BENTO_CREATE, configDir.getAbsolutePath())));
+    }
+
+    // Start Bento cluster by running the 'bento start' script.
+    mLog.info(String.format("Creating the bento cluster '%s'...", mBentoName));
+    executeAndLogCommand(bentoCommand(String.format(BENTO_START, configDir.getAbsolutePath())));
 
     // Has the container started as expected within the startup timeout?
     final long startTime = System.currentTimeMillis();
     while (!isRunning()) {
       if (System.currentTimeMillis() - startTime > STARTUP_TIMEOUT_MS) {
-        throw new RuntimeException(String.format(
-            "Could not start the Bento cluster '%s' within required timeout %d.",
-            mBentoName,
-            STARTUP_TIMEOUT_MS));
+        throw new RuntimeException(
+            String.format(
+                "Could not start the Bento cluster '%s' within required timeout %d.",
+                mBentoName,
+                STARTUP_TIMEOUT_MS
+            )
+        );
       }
       Thread.sleep(1000);
     }
@@ -122,18 +156,22 @@ public enum BentoCluster {
    * Execute command to stop the Bento cluster container. Wait uninterruptibly until the shell
    * command returns.
    *
+   * @param deleteBento should be set to false to skip deleting the bento container.
    * @throws Exception if the Bento cluster container could not be stopped.
    */
-  public void stop() throws Exception {
+  public void stop(final boolean deleteBento) throws Exception {
     if (!isRunning()) {
-      mLog.error(
-          "Attempting to shut down a Bento cluster container, but none running.");
+      mLog.error("Attempting to shut down a Bento cluster container, but none running.");
       return;
     }
 
     mLog.info(String.format("Stopping the Bento cluster '%s'...", mBentoName));
-    mLog.info(ShellExecUtil.executeCommand(bentoCommand(BENTO_STOP)));
-    mLog.info(ShellExecUtil.executeCommand(bentoCommand(BENTO_RM)));
+    executeAndLogCommand(bentoCommand(BENTO_STOP));
+
+    if (deleteBento) {
+      mLog.info(String.format("Deleting the Bento cluster '%s'...", mBentoName));
+      executeAndLogCommand(bentoCommand(BENTO_RM));
+    }
   }
 
   /**
@@ -144,34 +182,52 @@ public enum BentoCluster {
    * container is running.
    */
   public boolean isRunning() throws Exception {
-    return ShellExecUtil.executeCommand(bentoCommand(BENTO_STATUS)).contains("started")
-        && isRunningPerSupervisorCtl();
+    return ShellExecUtil
+        .executeCommand(bentoCommand(BENTO_STATUS))
+        .getStderr()
+        .contains("services started");
   }
 
   /**
-   * Query supervisorctl to see whether the Bento cluster components (HDFS,
-   * etc.) have started. We do this by checking whether hdfs-init has exited.
+   * Returns a shell command executed with a python venv setup.
    *
-   * This functionality requires that supervisor's RPC interface is set up.
-   *
-   * @return true if hdfs-init has exited, meaning that our components are up.
-   * @throws Exception if the supervisorctl query fails.
+   * @param command to run with a python venv.
+   * @return a formatted string command to execute.
    */
-  private boolean isRunningPerSupervisorCtl() throws Exception {
-    // In order to operate supervisorctl, we are required to specify a local config file even if
-    // it is unused. So we create a bare config file.
-    File bareSupervisorConfig;
-    try {
-      bareSupervisorConfig = File.createTempFile("empty_supervisor_config", ".conf");
-      FileUtils.write(bareSupervisorConfig, "[supervisorctl]");
-    } catch (IOException ioe) {
-      throw new IOException(
-          "Unable to write bare config to operate supervisorctl to query bento container status.",
-          ioe);
-    }
-    // Check whether hdfs-init has exited, meaning that the required components are up.
-    return ShellExecUtil.executeCommand(String.format(SUPERVISORCTL_HDFS_INIT_STATUS,
-        bareSupervisorConfig.getAbsolutePath(),
-        mBentoName)).contains("EXITED");
+  private String venvCommand(final String command) {
+    return String.format(
+        "source %s/activate && %s",
+        mVenvRoot.getAbsolutePath(),
+        command
+    );
+  }
+
+  /**
+   * Returns a bento script shell command to execute.
+   *
+   * @param command to run in shell such as create, stop, rm, etc.
+   * @return a formatted string command to execute.
+   */
+  private String bentoCommand(final String command) {
+    return String.format(
+        "bento -n %s %s",
+        mBentoName,
+        command
+    );
+  }
+
+  /**
+   * Executes a command and logs its stdout/stderr and exit code results to the maven log.
+   *
+   * @param command to run.
+   * @throws IOException if there is an error running the command.
+   * @throws ExecutionException if there is an error running the command.
+   */
+  private void executeAndLogCommand(final String command) throws IOException, ExecutionException {
+    final ShellResult result = ShellExecUtil.executeCommand(command);
+    mLog.info("Stdout:");
+    mLog.info(result.getStdout());
+    mLog.info("Stderr:");
+    mLog.info(result.getStderr());
   }
 }

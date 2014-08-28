@@ -19,6 +19,9 @@
 
 package org.kiji.maven.plugins;
 
+import java.io.File;
+
+import com.google.common.base.Preconditions;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
 import org.apache.maven.plugins.annotations.LifecyclePhase;
@@ -33,31 +36,84 @@ import org.apache.maven.plugins.annotations.Parameter;
     defaultPhase = LifecyclePhase.POST_INTEGRATION_TEST
 )
 public class StopMojo extends AbstractMojo {
-  /** If true, this goal should be a no-op. */
-  @Parameter(property = "skip", defaultValue = "false")
+  /**
+   * If true, this goal should be a no-op.
+   */
+  @Parameter(
+      property = "bento.skip",
+      alias = "bento.skip",
+      defaultValue = "false",
+      required = false
+  )
   private boolean mSkip;
 
-  /** If persist is true, then the started Bento cluster is persisted. */
-  @Parameter(property = "persist", defaultValue = "false")
-  private boolean mPersist;
+  /**
+   * Optional bento instance name override. Can be used to use an existing bento instance.
+   */
+  @Parameter(
+      property = "bento.name",
+      alias = "bento.name",
+      required = false
+  )
+  private String mBentoName;
+
+  /**
+   * Python venv root to install the bento cluster to.
+   */
+  @Parameter(
+      property = "bento.venv",
+      alias = "bento.venv",
+      defaultValue = "${project.build.directory}/bento-maven-plugin-venv",
+      required = false
+  )
+  private File mBentoVenvRoot;
+
+  /**
+   * If true, skips stopping the bento instance.
+   */
+  @Parameter(
+      property = "bento.skip.stop",
+      alias = "bento.skip.stop",
+      defaultValue = "false",
+      required = false
+  )
+  private boolean mSkipBentoStop;
+
+  /**
+   * If true, skips deleting the bento instance.
+   */
+  @Parameter(
+      property = "bento.skip.rm",
+      alias = "bento.skip.rm",
+      defaultValue = "false",
+      required = false
+  )
+  private boolean mSkipBentoRm;
 
   /** {@inheritDoc} */
   @Override
   public void execute() throws MojoExecutionException {
     if (mSkip) {
-      getLog().info("Not stopping an Bento cluster because skip=true.");
+      getLog().info("Not stopping an Bento cluster because bento.skip=true.");
       return;
     }
 
-    if (mPersist) {
-      getLog().info("Not stopping an Bento cluster because persist=true.");
+    if (mSkipBentoStop) {
+      getLog().info("Not stopping an Bento cluster because bento.skip.stop=true.");
       return;
     }
 
-    // Start the cluster.
+    // Stop the cluster.
     try {
-      BentoCluster.INSTANCE.stop();
-    } catch (Exception e) {
+      if (!BentoCluster.isInstanceSet()) {
+        Preconditions.checkArgument(
+            null != mBentoName,
+            "A bento name must be provided if a bento wasn't started by this plugin."
+        );
+        BentoCluster.setInstance(mBentoName, mBentoVenvRoot, getLog());
+      }
+      BentoCluster.getInstance().stop(!mSkipBentoRm);
+    } catch (final Exception e) {
       throw new MojoExecutionException("Unable to stop Bento cluster.", e);
     }
   }
