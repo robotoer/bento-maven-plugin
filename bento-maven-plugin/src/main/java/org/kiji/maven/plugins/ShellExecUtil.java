@@ -63,7 +63,12 @@ public final class ShellExecUtil {
   ) throws IOException, ExecutionException {
     final ExecutorService executor = Executors.newFixedThreadPool(2);
 
-    final Process commandProcess = Runtime.getRuntime().exec(command);
+    final Process commandProcess;
+    try {
+      commandProcess = Runtime.getRuntime().exec(command);
+    } catch (final IOException ioe) {
+      throw new IOException(String.format("Failed to exec: %s", command), ioe);
+    }
 
     final InputStreamReaderCallable stdoutCallable =
         new InputStreamReaderCallable(commandProcess.getInputStream());

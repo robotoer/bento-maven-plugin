@@ -129,6 +129,37 @@ public final class StartMojo extends AbstractMojo {
   }
 
   /**
+   * Default constructor for reflection.
+   */
+  public StartMojo() { }
+
+  /**
+   * Constructor for tests.
+   *
+   * @param skip flag.
+   * @param bentoConfigDir flag.
+   * @param bentoName flag.
+   * @param bentoVenvRoot flag.
+   * @param skipBentoCreate flag.
+   * @param skipBentoStart flag.
+   */
+  public StartMojo(
+      final boolean skip,
+      final File bentoConfigDir,
+      final String bentoName,
+      final File bentoVenvRoot,
+      final boolean skipBentoCreate,
+      final boolean skipBentoStart
+  ) {
+    mSkip = skip;
+    mBentoConfigDir = bentoConfigDir;
+    mBentoName = bentoName;
+    mBentoVenvRoot = bentoVenvRoot;
+    mSkipBentoCreate = skipBentoCreate;
+    mSkipBentoStart = skipBentoStart;
+  }
+
+  /**
    * Starts the Bento cluster container in a new thread.
    *
    * <p>This method is called by the maven plugin framework to run the goal.</p>

@@ -43,7 +43,7 @@ public final class BentoCluster {
    */
   public static void setInstance(final String bentoName, final File venvRoot, final Log log) {
     Preconditions.checkState(
-        venvRoot.mkdirs(),
+        venvRoot.mkdirs() || venvRoot.exists(),
         "Failed to create venv root: %s",
         venvRoot.getAbsolutePath()
     );
@@ -115,16 +115,15 @@ public final class BentoCluster {
     }
 
     // Create a virtualenv for this cluster.
-    ShellExecUtil.executeCommand(
-        String.format("env python3 -m venv %s", mVenvRoot.getAbsolutePath())
-    );
+    executeAndLogCommand(String.format("env python3 -m venv %s", mVenvRoot.getAbsolutePath()));
 //    ShellExecUtil.executeCommand(
 //        String.format("chmod +x %s/activate", mVenvRoot.getAbsolutePath())
 //    );
 
     // Install bento-cluster in this virtualenv.
-    ShellExecUtil.executeCommand(
-        venvCommand("env python3 -m pip install kiji-bento-cluster -i http://localhost/simple"));
+    executeAndLogCommand(
+        venvCommand("env python3 -m pip install kiji-bento-cluster -i http://localhost:8080/simple")
+    );
 
     if (createBento) {
       // Create Bento cluster by running the 'bento create' script.
@@ -196,7 +195,7 @@ public final class BentoCluster {
    */
   private String venvCommand(final String command) {
     return String.format(
-        "source %s/activate && %s",
+        "echo 'source %s/bin/activate && %s' | /bin/bash",
         mVenvRoot.getAbsolutePath(),
         command
     );
@@ -209,11 +208,7 @@ public final class BentoCluster {
    * @return a formatted string command to execute.
    */
   private String bentoCommand(final String command) {
-    return String.format(
-        "bento -n %s %s",
-        mBentoName,
-        command
-    );
+    return venvCommand(String.format("bento -n %s %s", mBentoName, command));
   }
 
   /**
@@ -225,6 +220,7 @@ public final class BentoCluster {
    */
   private void executeAndLogCommand(final String command) throws IOException, ExecutionException {
     final ShellResult result = ShellExecUtil.executeCommand(command);
+    mLog.info(String.format("Command: %s", command));
     mLog.info("Stdout:");
     mLog.info(result.getStdout());
     mLog.info("Stderr:");

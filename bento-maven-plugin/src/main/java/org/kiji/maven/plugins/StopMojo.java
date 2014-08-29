@@ -35,7 +35,7 @@ import org.apache.maven.plugins.annotations.Parameter;
     name = "stop",
     defaultPhase = LifecyclePhase.POST_INTEGRATION_TEST
 )
-public class StopMojo extends AbstractMojo {
+public final class StopMojo extends AbstractMojo {
   /**
    * If true, this goal should be a no-op.
    */
@@ -89,6 +89,34 @@ public class StopMojo extends AbstractMojo {
       required = false
   )
   private boolean mSkipBentoRm;
+
+  /**
+   * Default constructor for reflection.
+   */
+  public StopMojo() { }
+
+  /**
+   * Constructor for tests.
+   *
+   * @param skip flag.
+   * @param bentoName flag.
+   * @param bentoVenvRoot flag.
+   * @param skipBentoStop flag.
+   * @param skipBentoRm flag.
+   */
+  public StopMojo(
+      final boolean skip,
+      final String bentoName,
+      final File bentoVenvRoot,
+      final boolean skipBentoStop,
+      final boolean skipBentoRm
+  ) {
+    mSkip = skip;
+    mBentoName = bentoName;
+    mBentoVenvRoot = bentoVenvRoot;
+    mSkipBentoStop = skipBentoStop;
+    mSkipBentoRm = skipBentoRm;
+  }
 
   /** {@inheritDoc} */
   @Override
