@@ -49,6 +49,26 @@
       <artifactId>hadoop-common</artifactId>
       <scope>test</scope>
     </dependency>
+    <dependency>
+      <groupId>org.apache.hadoop</groupId>
+      <artifactId>hadoop-hdfs</artifactId>
+      <version>${hadoop.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.curator</groupId>
+      <artifactId>curator-framework</artifactId>
+      <version>${curator.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.kiji.maven.plugins</groupId>
+      <artifactId>bento-maven-plugin</artifactId>
+      <version>${project.version}</version>
+      <classifier>tests</classifier>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
@@ -67,6 +87,7 @@
       <plugin>
         <groupId>org.kiji.maven.plugins</groupId>
         <artifactId>bento-maven-plugin</artifactId>
+        <version>${project.version}</version>
         <executions>
           <execution>
             <goals>

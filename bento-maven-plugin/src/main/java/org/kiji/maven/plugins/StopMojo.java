@@ -37,6 +37,16 @@ import org.apache.maven.plugins.annotations.Parameter;
 )
 public final class StopMojo extends AbstractMojo {
   /**
+   * Address of the docker daemon to manage bento instances with.
+   */
+  @Parameter(
+      property = "bento.docker.address",
+      alias = "bento.docker.address",
+      required = false
+  )
+  private String mDockerAddress;
+
+  /**
    * If true, this goal should be a no-op.
    */
   @Parameter(
@@ -98,6 +108,7 @@ public final class StopMojo extends AbstractMojo {
   /**
    * Constructor for tests.
    *
+   * @param dockerAddress flag.
    * @param skip flag.
    * @param bentoName flag.
    * @param bentoVenvRoot flag.
@@ -105,12 +116,13 @@ public final class StopMojo extends AbstractMojo {
    * @param skipBentoRm flag.
    */
   public StopMojo(
-      final boolean skip,
+      final String dockerAddress, final boolean skip,
       final String bentoName,
       final File bentoVenvRoot,
       final boolean skipBentoStop,
       final boolean skipBentoRm
   ) {
+    mDockerAddress = dockerAddress;
     mSkip = skip;
     mBentoName = bentoName;
     mBentoVenvRoot = bentoVenvRoot;
@@ -138,7 +150,12 @@ public final class StopMojo extends AbstractMojo {
             null != mBentoName,
             "A bento name must be provided if a bento wasn't started by this plugin."
         );
-        BentoCluster.setInstance(mBentoName, mBentoVenvRoot, getLog());
+        BentoCluster.setInstance(
+            mBentoName,
+            mBentoVenvRoot,
+            mDockerAddress == null ? BentoCluster.getDockerAddress() : mDockerAddress,
+            getLog()
+        );
       }
       BentoCluster.getInstance().stop(!mSkipBentoRm);
     } catch (final Exception e) {

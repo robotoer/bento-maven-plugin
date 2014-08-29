@@ -30,6 +30,10 @@
  * Flags:
  * <table>
  *   <tr>
+ *     <td>bento.docker.address</td>
+ *     <td>Address of the docker daemon to use to manage bento instances.</td>
+ *   </tr>
+ *   <tr>
  *     <td>bento.skip</td>
  *     <td>Skips all goals of the bento-maven-plugin.</td>
  *   </tr>
@@ -65,6 +69,10 @@
  *   <tr>
  *     <td>bento.venv</td>
  *     <td>Python venv root to install the bento cluster to.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.pypi.repository</td>
+ *     <td>Pypi repository to install kiji-bento-cluster from.</td>
  *   </tr>
  * </table>
  */

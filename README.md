@@ -10,51 +10,109 @@ Usage
 
 Ensure Docker is installed and that the user is in the `docker` user group.
 
-Ensure that the `docker` branch of the `bento-cluster` is available on the local machine and pull `kijiproject/bento-cluster` from Docker Hub.
+Bento cluster can be installed by running:
 
-> `git clone git@github.com:kijiproject/bento-cluster /path/to/bento-cluster`
+    pip3 install kiji-bento-cluster
 
-> `docker pull kijiproject/bento-cluster`
+Pull the latest bento image:
 
-Ensure that the `maven-failsafe-plugin` and the `bento-maven-plugin` are part of your module's `pom.xml`, by inserting the following block:
-```xml
-      <plugin>
-        <artifactId>maven-failsafe-plugin</artifactId>
-        <version>2.17</version>
-        <executions>
-          <execution>
-            <goals>
-              <goal>integration-test</goal>
-              <goal>verify</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <groupId>org.kiji.maven.plugins</groupId>
-        <artifactId>bento-maven-plugin</artifactId>
-        <executions>
-          <execution>
-            <goals>
-              <goal>start</goal>
-              <goal>stop</goal>
-            </goals>
-          </execution>
-        </executions>
-      </plugin>
-```
+    bento pull
+
+Ensure that the `maven-failsafe-plugin` and the `bento-maven-plugin` are part of your module's
+`pom.xml`, by inserting the following block:
+
+    <plugin>
+      <artifactId>maven-failsafe-plugin</artifactId>
+      <version>2.17</version>
+      <executions>
+        <execution>
+          <goals>
+            <goal>integration-test</goal>
+            <goal>verify</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
+    <plugin>
+      <groupId>org.kiji.maven.plugins</groupId>
+      <artifactId>bento-maven-plugin</artifactId>
+      <executions>
+        <execution>
+          <goals>
+            <goal>start</goal>
+            <goal>stop</goal>
+          </goals>
+        </execution>
+      </executions>
+    </plugin>
 
 
-In order to run `bento-maven-plugin`, specify the following parameters when running `mvn install`.
+The plugin exposes the following properties for adjusting its behavior:
 
-`-Dbento.dir.path=/path/to/bento-cluster/` - Where on this machine is the bento-cluster? This parameter is mandatory.
+<table>
+  <tr>
+    <td>Property</td>
+    <td>Type</td>
+    <td>Description</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.docker.address</code></pre></td>
+    <td>string</td>
+    <td>Address of the docker daemon to use to manage bento instances.</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.skip</code></pre></td>
+    <td>boolean</td>
+    <td>Skips all goals of the bento-maven-plugin.</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.skip.create</code></pre></td>
+    <td>boolean</td>
+    <td>
+      Skips creating the bento instance. Should be used in conjunction with an externally created
+      bento instance through the "bento.name" property.
+    </td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.skip.start</code></pre></td>
+    <td>boolean</td>
+    <td>
+      Skips starting the bento instance. Should be used in conjunction with an externally created
+      and started bento instance through the "bento.name" property.
+    </td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.skip.stop</code></pre></td>
+    <td>boolean</td>
+    <td>Skips stopping the bento instance.</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.skip.rm</code></pre></td>
+    <td>boolean</td>
+    <td>Skips deleting the bento instance.</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.conf.dir</code></pre></td>
+    <td>string</td>
+    <td>
+      Directory to place configuration files in. Defaults to the test-classes so that
+      configuration files are on the classpath.
+    </td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.venv</code></pre></td>
+    <td>string</td>
+    <td>Python venv root to install the bento cluster to.</td>
+  </tr>
+  <tr>
+    <td><pre><code>bento.pypi.repository</code></pre></td>
+    <td>string</td>
+    <td>Pypi repository to install kiji-bento-cluster from.</td>
+  </tr>
+</table>
 
-`-Dskip=false` - Whether to skip setting up this plugin. Optional, defaults to `false`.
 
-`-Dsite.files.dir.path=/path/to/site-files/` - Directory where to output generate site files to connect to HDFS, HBase, Yarn, etc. Optional, defaults to `target/test-classes/`.
+These properties can be specified on the command line by placing a -D in front of the property name
+and adding a '=' followed by its value:
 
-`-Dpersist=false` - Should the start Bento cluster container persist after the integration test? Optional, defaults to `false`.
-
-The most common use-case is:
-
-> `mvn clean install -Dbento.dir.path=/path/to/bento-cluster/`
+    -Dproperty.name="property value"
