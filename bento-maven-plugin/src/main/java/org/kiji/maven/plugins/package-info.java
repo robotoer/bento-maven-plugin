@@ -20,5 +20,60 @@
 /**
  * Package containing a Maven plugin to start and stop a Bento cluster in a Docker container for
  * use in integration testing.
+ *
+ * Goals:
+ * <ul>
+ *   <li>start</li>
+ *   <li>stop</li>
+ * </ul>
+ *
+ * Flags:
+ * <table>
+ *   <tr>
+ *     <td>bento.docker.address</td>
+ *     <td>Address of the docker daemon to use to manage bento instances.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.skip</td>
+ *     <td>Skips all goals of the bento-maven-plugin.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.skip.create</td>
+ *     <td>
+ *       Skips creating the bento instance. Should be used in conjunction with an externally created
+ *       bento instance through the "bento.name" property.
+ *     </td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.skip.start</td>
+ *     <td>
+ *       Skips starting the bento instance. Should be used in conjunction with an externally created
+ *       and started bento instance through the "bento.name" property.
+ *     </td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.skip.stop</td>
+ *     <td>Skips stopping the bento instance.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.skip.rm</td>
+ *     <td>Skips deleting the bento instance.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.conf.dir</td>
+ *     <td>
+ *       Directory to place configuration files in. Defaults to the test-classes so that
+ *       configuration files are on the classpath.
+ *     </td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.venv</td>
+ *     <td>Python venv root to install the bento cluster to.</td>
+ *   </tr>
+ *   <tr>
+ *     <td>bento.pypi.repository</td>
+ *     <td>Pypi repository to install kiji-bento-cluster from.</td>
+ *   </tr>
+ * </table>
  */
 package org.kiji.maven.plugins;
