@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import com.google.common.io.Files;
 import org.apache.hadoop.conf.Configuration;
+import org.junit.Ignore;
 import org.junit.Test;
 
 /**
@@ -31,6 +32,7 @@ import org.junit.Test;
  * // TODO: Test access HBase, etc.
  */
 public class TestMojos {
+  @Ignore
   @Test
   public void testCluster() throws Exception {
     final File configDir = Files.createTempDir();
@@ -46,6 +48,9 @@ public class TestMojos {
         venvDir,
         false,
         false,
+        null,
+        null,
+        null,
         null
     ).execute();
     try {
@@ -61,7 +66,9 @@ public class TestMojos {
           bentoName,
           venvDir,
           false,
-          false
+          false,
+          null,
+          null
       ).execute();
     }
   }

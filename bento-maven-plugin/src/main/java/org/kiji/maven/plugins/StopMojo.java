@@ -20,7 +20,10 @@
 package org.kiji.maven.plugins;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.concurrent.ExecutionException;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import org.apache.maven.plugin.AbstractMojo;
 import org.apache.maven.plugin.MojoExecutionException;
@@ -101,10 +104,34 @@ public final class StopMojo extends AbstractMojo {
   private boolean mSkipBentoRm;
 
   /**
+   * Time to wait for the bento cluster to start.
+   */
+  @Parameter(
+      property = "bento.timeout.start",
+      alias = "bento.timeout.start",
+      required = false
+  )
+  // This is a Long so that it will be set to null if this flag is not provided.
+  private Long mTimeout;
+
+  /**
+   * Interval at which to poll the bento cluster's status when starting or stopping it.
+   */
+  @Parameter(
+      property = "bento.timeout.interval",
+      alias = "bento.timeout.interval",
+      required = false
+  )
+  // This is a Long so that it will be set to null if this flag is not provided.
+  private Long mPollInterval;
+
+  /**
    * Default constructor for reflection.
    */
   public StopMojo() { }
 
+  // We're going to use a bunch of parameters here just for the purpose of a test.
+  // CSOFF: ParameterNumber
   /**
    * Constructor for tests.
    *
@@ -114,13 +141,17 @@ public final class StopMojo extends AbstractMojo {
    * @param bentoVenvRoot flag.
    * @param skipBentoStop flag.
    * @param skipBentoRm flag.
+   * @param timeout flag.
+   * @param pollInterval flag.
    */
   public StopMojo(
       final String dockerAddress, final boolean skip,
       final String bentoName,
       final File bentoVenvRoot,
       final boolean skipBentoStop,
-      final boolean skipBentoRm
+      final boolean skipBentoRm,
+      final Long timeout,
+      final Long pollInterval
   ) {
     mDockerAddress = dockerAddress;
     mSkip = skip;
@@ -128,7 +159,10 @@ public final class StopMojo extends AbstractMojo {
     mBentoVenvRoot = bentoVenvRoot;
     mSkipBentoStop = skipBentoStop;
     mSkipBentoRm = skipBentoRm;
+    mTimeout = timeout;
+    mPollInterval = pollInterval;
   }
+  // CSON: ParameterNumber
 
   /** {@inheritDoc} */
   @Override
@@ -144,22 +178,28 @@ public final class StopMojo extends AbstractMojo {
     }
 
     // Stop the cluster.
+    if (!BentoCluster.isInstanceSet()) {
+      Preconditions.checkArgument(
+          null != mBentoName,
+          "A bento name must be provided if a bento wasn't started by this plugin."
+      );
+      BentoCluster.setInstance(
+          mBentoName,
+          mBentoVenvRoot,
+          mDockerAddress == null ? BentoCluster.getDockerAddress() : mDockerAddress,
+          getLog()
+      );
+    }
     try {
-      if (!BentoCluster.isInstanceSet()) {
-        Preconditions.checkArgument(
-            null != mBentoName,
-            "A bento name must be provided if a bento wasn't started by this plugin."
-        );
-        BentoCluster.setInstance(
-            mBentoName,
-            mBentoVenvRoot,
-            mDockerAddress == null ? BentoCluster.getDockerAddress() : mDockerAddress,
-            getLog()
-        );
-      }
-      BentoCluster.getInstance().stop(!mSkipBentoRm);
-    } catch (final Exception e) {
-      throw new MojoExecutionException("Unable to stop Bento cluster.", e);
+      BentoCluster.getInstance().stop(
+          !mSkipBentoRm,
+          Optional.fromNullable(mTimeout),
+          Optional.fromNullable(mPollInterval)
+      );
+    } catch (final IOException ioe) {
+      throw new MojoExecutionException("Failed to stop bento cluster", ioe);
+    } catch (final ExecutionException ee) {
+      throw new MojoExecutionException("Failed to stop bento cluster", ee);
     }
   }
 }

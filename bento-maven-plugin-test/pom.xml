@@ -96,6 +96,9 @@
             </goals>
           </execution>
         </executions>
+        <configuration>
+          <bento.pypi.repository>http://localhost:80/simple</bento.pypi.repository>
+        </configuration>
       </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
@@ -106,14 +109,5 @@
         <artifactId>findbugs-maven-plugin</artifactId>
       </plugin>
     </plugins>
-    <testResources>
-      <testResource>
-        <directory>src/test/resources</directory>
-        <filtering>true</filtering>
-        <includes>
-          <include>**/*.properties</include>
-        </includes>
-      </testResource>
-    </testResources>
   </build>
 </project>

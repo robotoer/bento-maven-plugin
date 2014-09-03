@@ -38,20 +38,7 @@ import org.apache.maven.plugin.logging.Log;
  */
 public final class BentoCluster {
   /**
-   * Bento commands.
-   */
-  private static final String BENTO_CREATE = "create --output-config-dir=%s";
-  private static final String BENTO_START = "start --output-config-dir=%s";
-  private static final String BENTO_STOP = "stop";
-  private static final String BENTO_RM = "rm";
-  private static final String BENTO_STATUS = "status";
-
-  /** Hope the the bento cluster components all start in 120 seconds. */
-  private static final long STARTUP_TIMEOUT_MS = 120000L;
-
-  /**
    * Where in the bento-cluster environment are the generated site files stored.
-   * TODO: Configure the bento script to write the site files to a pre-specified location.
    */
   private static final String[] SITE_FILE_RELATIVE_PATHS = new String[] {
       "hbase/hbase-site.xml",
@@ -69,20 +56,20 @@ public final class BentoCluster {
    * @param bentoName name of the Bento cluster container.
    * @param venvRoot to the python virtualenv to install bento-cluster to.
    * @param dockerAddress of the docker daemon to use to manage bento instances.
-   * @param log the maven log.
+   * @param mavenLog the maven log.
    */
   public static void setInstance(
       final String bentoName,
       final File venvRoot,
       final String dockerAddress,
-      final Log log
+      final Log mavenLog
   ) {
     Preconditions.checkState(
         venvRoot.mkdirs() || venvRoot.exists(),
         "Failed to create venv root: %s",
         venvRoot.getAbsolutePath()
     );
-    instance = new BentoCluster(bentoName, venvRoot, dockerAddress, log);
+    instance = new BentoCluster(bentoName, venvRoot, dockerAddress, mavenLog);
   }
 
   /**
@@ -141,7 +128,7 @@ public final class BentoCluster {
   private final String mDockerAddress;
 
   /** The maven log used to communicate with the maven user. */
-  private final Log mLog;
+  private final Log mMavenLog;
 
   /**
    * Constructs a bento cluster.
@@ -149,18 +136,18 @@ public final class BentoCluster {
    * @param bentoName name of the Bento cluster container.
    * @param venvRoot to the python virtualenv to install bento-cluster to.
    * @param dockerAddress of the docker daemon to use to manage bento instances.
-   * @param log the maven log.
+   * @param mavenLog to use to send output to the maven console.
    */
   private BentoCluster(
       final String bentoName,
       final File venvRoot,
       final String dockerAddress,
-      final Log log
+      final Log mavenLog
   ) {
     mBentoName = bentoName;
     mVenvRoot = venvRoot;
     mDockerAddress = dockerAddress;
-    mLog = log;
+    mMavenLog = mavenLog;
   }
 
   /**
@@ -168,16 +155,29 @@ public final class BentoCluster {
    *
    * @param configDir to write bento hadoop/hbase configuration files to.
    * @param createBento should be set to false to skip creating the bento container.
+   * @param platformVersion is the optional version of the hadoop/hbase stack to run in the bento
+   *     cluster.
    * @param pypiRepository is the optional address or name of the pypi repository to install
    *     kiji-bento-cluster from.
-   * @throws Exception if the Bento cluster container could not be started in the specified timeout.
+   * @param timeoutMillis is the optional override for the amount of time to wait in milliseconds
+   *     for the bento cluster to start.
+   * @param pollIntervalMillis is the optional override for the amount of time to wait in
+   *     milliseconds between checks to see if the bento cluster has started.
+   * @throws java.io.IOException if there is an error calling the bento executable.
+   * @throws java.util.concurrent.ExecutionException if there is an error calling the bento
+   *     executable.
    */
   public void start(
       final File configDir,
       final boolean createBento,
-      final Optional<String> pypiRepository
-  ) throws Exception {
+      final Optional<String> platformVersion,
+      final Optional<String> pypiRepository,
+      final Optional<Long> timeoutMillis,
+      final Optional<Long> pollIntervalMillis
+  ) throws IOException, ExecutionException {
     Preconditions.checkState(!isRunning(), "Cluster already running: %s", this);
+
+    mMavenLog.info(String.format("Starting the Bento cluster '%s'...", mBentoName));
 
     final ImmutableList.Builder<String> commandsBuilder = ImmutableList.builder();
 
@@ -200,32 +200,37 @@ public final class BentoCluster {
 
     // Add a command to create the bento container.
     if (createBento) {
-      commandsBuilder.add(bentoCommand(String.format(BENTO_CREATE, configDir.getAbsolutePath())));
+      final StringBuilder pullCommandBuilder = new StringBuilder("pull");
+      if (platformVersion.isPresent()) {
+        pullCommandBuilder.append(" --platform-version=").append(platformVersion.get());
+      }
+      commandsBuilder.add(bentoCommand(pullCommandBuilder.toString()));
+
+      final StringBuilder createCommandBuilder = new StringBuilder("create")
+          .append(" --output-config-dir=").append(configDir.getAbsolutePath());
+      if (platformVersion.isPresent()) {
+        createCommandBuilder.append(" --platform-version=").append(platformVersion.get());
+      }
+      commandsBuilder.add(bentoCommand(createCommandBuilder.toString()));
     }
 
     // Add a command to start the bento container.
-    commandsBuilder.add(bentoCommand(String.format(BENTO_START, configDir.getAbsolutePath())));
+    final StringBuilder startCommandBuilder = new StringBuilder("start")
+        .append(" --output-config-dir=").append(configDir.getAbsolutePath());
+    if (timeoutMillis.isPresent()) {
+      startCommandBuilder.append(" --timeout=").append(timeoutMillis.get());
+    }
+    if (pollIntervalMillis.isPresent()) {
+      startCommandBuilder.append(" --poll-interval=").append(pollIntervalMillis.get());
+    }
+    commandsBuilder.add(bentoCommand(startCommandBuilder.toString()));
 
     // Run the commands.
     final ImmutableList<String> commands = commandsBuilder.build();
     executeAndLogCommands(commands.toArray(new String[commands.size()]));
 
-    mLog.info(String.format("Starting the Bento cluster '%s'...", mBentoName));
-
-    // Has the container started as expected within the startup timeout?
-    final long startTime = System.currentTimeMillis();
-    while (!isRunning()) {
-      if (System.currentTimeMillis() - startTime > STARTUP_TIMEOUT_MS) {
-        throw new RuntimeException(
-            String.format(
-                "Could not start the Bento cluster '%s' within required timeout %d.",
-                mBentoName,
-                STARTUP_TIMEOUT_MS
-            )
-        );
-      }
-      Thread.sleep(1000);
-    }
+    // Ensure that the cluster has been started.
+    Preconditions.checkState(isRunning(), "Bento cluster failed to start!");
   }
 
   /**
@@ -233,24 +238,88 @@ public final class BentoCluster {
    * command returns.
    *
    * @param deleteBento should be set to false to skip deleting the bento container.
-   * @throws Exception if the Bento cluster container could not be stopped.
+   * @param timeoutMillis is the optional override for the amount of time to wait in milliseconds
+   *     for the bento cluster to stop.
+   * @param pollIntervalMillis is the optional override for the amount of time to wait in
+   *     milliseconds between checks to see if the bento cluster has stopped.
+   * @throws java.io.IOException if there is an error calling the bento executable.
+   * @throws java.util.concurrent.ExecutionException if there is an error calling the bento
+   *     executable.
    */
-  public void stop(final boolean deleteBento) throws Exception {
+  public void stop(
+      final boolean deleteBento,
+      final Optional<Long> timeoutMillis,
+      final Optional<Long> pollIntervalMillis
+  ) throws IOException, ExecutionException {
     if (!isRunning()) {
-      mLog.error("Attempting to shut down a Bento cluster container, but none running.");
+      mMavenLog.error("Attempting to shut down a Bento cluster container, but none running.");
       return;
     }
 
     final ImmutableList.Builder<String> commandsBuilder = ImmutableList.builder();
-    commandsBuilder.add(sourceVenvCommand());
-    commandsBuilder.add(bentoCommand(BENTO_STOP));
-    if (deleteBento) {
-      commandsBuilder.add(bentoCommand(BENTO_RM));
-    }
-    final ImmutableList<String> commands = commandsBuilder.build();
 
-    mLog.info(String.format("Stopping the Bento cluster '%s'...", mBentoName));
+    // Add a command to activate the python virtual environment for this plugin.
+    commandsBuilder.add(sourceVenvCommand());
+
+    // Add a command to stop the bento cluster.
+    final StringBuilder stopCommandBuilder = new StringBuilder("stop");
+    if (timeoutMillis.isPresent()) {
+      stopCommandBuilder.append(" --timeout=").append(timeoutMillis.get());
+    }
+    if (pollIntervalMillis.isPresent()) {
+      stopCommandBuilder.append(" --poll-interval").append(pollIntervalMillis.get());
+    }
+    commandsBuilder.add(bentoCommand(stopCommandBuilder.toString()));
+
+    // Add a command to delete the bento cluster.
+    if (deleteBento) {
+      commandsBuilder.add(bentoCommand("rm"));
+    }
+
+    // Run the commands.
+    final ImmutableList<String> commands = commandsBuilder.build();
+    mMavenLog.info(String.format("Stopping the Bento cluster '%s'...", mBentoName));
     executeAndLogCommands(commands.toArray(new String[commands.size()]));
+  }
+
+  /**
+   * Check if the Bento cluster services are running, by querying the bento script.
+   *
+   * @return true if the bento cluster init script has completed.
+   * @throws java.io.IOException if the bento script can not be uninterruptibly queried for whether
+   *     a bento container is running.
+   * @throws java.util.concurrent.ExecutionException if the bento script can not be uninterruptibly
+   *     queried for whether a bento container is running.
+   */
+  public boolean isRunning() throws IOException, ExecutionException {
+    return venvExists() && executeAndLogCommands(sourceVenvCommand(), bentoCommand("status"))
+        .getStderr()
+        .contains("services started");
+  }
+
+  /**
+   * Check if the Bento cluster container is running, by querying the bento script.
+   *
+   * @return true if the bento cluster docker container is running.
+   * @throws java.io.IOException if the bento script can not be uninterruptibly queried for whether
+   *     a bento container is running.
+   * @throws java.util.concurrent.ExecutionException if the bento script can not be uninterruptibly
+   *     queried for whether a bento container is running.
+   */
+  public boolean isContainerRunning() throws IOException, ExecutionException {
+    return venvExists() && executeAndLogCommands(sourceVenvCommand(), bentoCommand("status"))
+        .getStderr()
+        .contains("container started");
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public String toString() {
+    return Objects.toStringHelper(this)
+        .add("bentoName", mBentoName)
+        .add("venvRoot", mVenvRoot)
+        .add("dockerAddress", mDockerAddress)
+        .toString();
   }
 
   /**
@@ -260,21 +329,6 @@ public final class BentoCluster {
    */
   private boolean venvExists() {
     return new File(new File(mVenvRoot, "bin"), "activate").exists();
-  }
-
-  /**
-   * Check if the Bento cluster container is running, by querying the bento script.
-   *
-   * @return true if the bento script
-   * @throws java.io.IOException if the bento script can not be uninterruptibly queried for whether
-   *     a bento container is running.
-   * @throws java.util.concurrent.ExecutionException if the bento script can not be uninterruptibly
-   *     queried for whether a bento container is running.
-   */
-  public boolean isRunning() throws IOException, ExecutionException {
-    return venvExists() && executeAndLogCommands(sourceVenvCommand(), bentoCommand(BENTO_STATUS))
-        .getStderr()
-        .contains("services started");
   }
 
   /**
@@ -344,7 +398,7 @@ public final class BentoCluster {
     }
     final File writtenFile = new File(pluginConfigDir, generatedSiteFile.getName());
     Preconditions.checkArgument(writtenFile.exists());
-    mLog.info("Wrote config site file: " + writtenFile.getAbsolutePath());
+    mMavenLog.info("Wrote config site file: " + writtenFile.getAbsolutePath());
 
     // We will also append the "conf-index.conf" file with the path to the newly written config
     // site file.
@@ -360,7 +414,7 @@ public final class BentoCluster {
           ioe
       );
     }
-    mLog.info("Appended site file path to conf index: " + confIndexFile.getAbsolutePath());
+    mMavenLog.info("Appended site file path to conf index: " + confIndexFile.getAbsolutePath());
   }
 
   /**
@@ -426,11 +480,11 @@ public final class BentoCluster {
     );
 
     // Log stdout/stderr.
-    mLog.info("Stdout:");
-    mLog.info(result.getStdout());
-    mLog.info("Stderr:");
-    mLog.info(result.getStderr());
-    mLog.info(String.format("Exit code: %d", result.getExitCode()));
+    mMavenLog.info("Stdout:");
+    mMavenLog.info(result.getStdout());
+    mMavenLog.info("Stderr:");
+    mMavenLog.info(result.getStderr());
+    mMavenLog.info(String.format("Exit code: %d", result.getExitCode()));
 
     Preconditions.checkState(
         result.getExitCode() == 0,
@@ -438,15 +492,5 @@ public final class BentoCluster {
     );
 
     return result;
-  }
-
-  /** {@inheritDoc} */
-  @Override
-  public String toString() {
-    return Objects.toStringHelper(this)
-        .add("bentoName", mBentoName)
-        .add("venvRoot", mVenvRoot)
-        .add("dockerAddress", mDockerAddress)
-        .toString();
   }
 }

@@ -77,13 +77,19 @@ public final class ShellExecUtil {
     final Future<String> stdoutFuture = executor.submit(stdoutCallable);
     final Future<String> stderrFuture = executor.submit(stderrCallable);
 
+    // This code has been copied/adapted from Uninterruptibles#getUninterruptibly.
     boolean interrupted = false;
     int exitCode;
     try {
       while (true) {
         try {
           exitCode = commandProcess.waitFor();
-          break;
+
+          return new ShellResult(
+              Uninterruptibles.getUninterruptibly(stderrFuture),
+              Uninterruptibles.getUninterruptibly(stdoutFuture),
+              exitCode
+          );
         } catch (final InterruptedException ise) {
           interrupted = true;
         }
@@ -93,12 +99,6 @@ public final class ShellExecUtil {
         Thread.currentThread().interrupt();
       }
     }
-
-    return new ShellResult(
-        Uninterruptibles.getUninterruptibly(stderrFuture),
-        Uninterruptibles.getUninterruptibly(stdoutFuture),
-        exitCode
-    );
   }
 
   /**
