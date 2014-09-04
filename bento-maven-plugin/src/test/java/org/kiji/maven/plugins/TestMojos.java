@@ -28,7 +28,7 @@ import org.junit.Test;
 
 /**
  * Run this integration test against the bento-maven-plugin to demonstrate that the plugin works.
- * // TODO: Test access HBase, etc.
+ * // TODO: Test access to HBase, Cassandra.
  */
 public class TestMojos {
   @Test
