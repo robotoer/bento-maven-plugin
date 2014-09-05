@@ -20,10 +20,13 @@
 package org.kiji.maven.plugins;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.util.Properties;
 import java.util.Set;
+import java.util.UUID;
 
 import com.google.common.collect.Sets;
 import org.apache.curator.framework.CuratorFramework;
@@ -35,16 +38,39 @@ import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.zookeeper.data.Stat;
 import org.junit.Assert;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public final class BentoTestUtils {
+  private static final Logger LOG = LoggerFactory.getLogger(BentoTestUtils.class);
+
   public static final RetryOneTime CURATOR_RETRY_POLICY = new RetryOneTime(1000);
 
   /** Disabled constructor for utility class. */
   private BentoTestUtils() { }
 
+  public static void validateBentoName(
+      final File configDir,
+      final String bentoName
+  ) throws IOException {
+    // Validate that the bento name was stored correctly.
+    final Properties bentoProperties = new Properties();
+    final File bentoPropertiesFile = new File(configDir, BentoCluster.BENTO_NAME_FILE);
+    final FileInputStream inputStream = new FileInputStream(bentoPropertiesFile);
+    try {
+      bentoProperties.load(inputStream);
+    } finally {
+      inputStream.close();
+    }
+
+    Assert.assertEquals(bentoName, bentoProperties.get(BentoCluster.BENTO_NAME_PROPERTY));
+  }
+
   static void validateHdfs(
       final Configuration conf
   ) throws URISyntaxException, IOException {
+    LOG.info("Validating that hdfs has started correctly.");
+
     final URI bentoHdfsUri = new URI("hdfs:///");
     final FileSystem hdfs = FileSystem.get(bentoHdfsUri, conf);
 
@@ -57,9 +83,16 @@ public final class BentoTestUtils {
     Assert.assertTrue("Bento HDFS must have /user/", directoryNames.contains("user"));
     Assert.assertTrue("Bento HDFS must have /var/", directoryNames.contains("var"));
     Assert.assertTrue("Bento HDFS must have /tmp", directoryNames.contains("tmp"));
+
+    // Try writing to hdfs.
+    final Path randomDirectory = new Path(UUID.randomUUID().toString());
+    Assert.assertTrue("Failed to create directory on hdfs.", hdfs.mkdirs(randomDirectory));
+    Assert.assertTrue("Failed to create directory on hdfs.", hdfs.isDirectory(randomDirectory));
   }
 
   static void validateZookeeper(final String bentoName) throws Exception {
+    LOG.info("Validating that zookeeper has started correctly.");
+
     final CuratorFramework curatorFramework = CuratorFrameworkFactory.builder()
         .connectString(String.format("%s:2181", bentoName))
         .retryPolicy(CURATOR_RETRY_POLICY)

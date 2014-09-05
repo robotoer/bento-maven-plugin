@@ -53,25 +53,6 @@
     <!--<module>bento-maven-plugin-test</module>-->
   </modules>
 
-  <dependencyManagement>
-    <dependencies>
-      <dependency>
-        <groupId>org.kiji.platforms</groupId>
-        <artifactId>kiji-cdh5-0-platform</artifactId>
-        <version>${kiji-platforms.version}</version>
-        <type>pom</type>
-        <scope>compile</scope>
-      </dependency>
-      <dependency>
-        <groupId>org.kiji.platforms</groupId>
-        <artifactId>kiji-cdh5-0-test-platform</artifactId>
-        <version>${kiji-platforms.version}</version>
-        <type>pom</type>
-        <scope>test</scope>
-      </dependency>
-    </dependencies>
-  </dependencyManagement>
-
   <build>
     <plugins>
       <plugin>

@@ -257,12 +257,16 @@ public final class StartMojo extends AbstractMojo {
           Optional.fromNullable(mTimeout),
           Optional.fromNullable(mPollInterval)
       );
+      BentoCluster.getInstance().copySiteFiles(configDir, mBentoConfigDir);
+
+      // Copy bento-name to the classpath as a file.
+      BentoCluster.getInstance().copyBentoName(mBentoConfigDir);
     } catch (final IOException ioe) {
       throw new MojoExecutionException("Failed to start bento cluster", ioe);
     } catch (final ExecutionException ee) {
       throw new MojoExecutionException("Failed to start bento cluster", ee);
+    } catch (InterruptedException ie) {
+      throw new MojoExecutionException("Failed to start bento cluster", ie);
     }
-
-    BentoCluster.getInstance().copySiteFiles(configDir, mBentoConfigDir);
   }
 }

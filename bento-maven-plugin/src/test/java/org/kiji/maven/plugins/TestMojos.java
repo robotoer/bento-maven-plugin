@@ -28,8 +28,8 @@ import org.junit.Test;
 
 /**
  * Run this integration test against the bento-maven-plugin to demonstrate that the plugin works.
- * // TODO: Test access HBase, etc.
  */
+// TODO: Test access to Hadoop, HBase, Cassandra.
 public class TestMojos {
   @Test
   public void testCluster() throws Exception {
@@ -46,7 +46,8 @@ public class TestMojos {
         venvDir,
         false,
         false,
-        null,
+        // When updating this, remember to also update the kiji-platforms dependency in the pom.
+        "cdh5.0.3",
         "http://pypi.wibidata.net/simple",
         null,
         null
@@ -54,7 +55,7 @@ public class TestMojos {
     try {
       // Read hadoop configuration from the command line.
       final Configuration conf = BentoTestUtils.bentoConfiguration(configDir);
-
+      BentoTestUtils.validateBentoName(configDir, bentoName);
       BentoTestUtils.validateHdfs(conf);
       BentoTestUtils.validateZookeeper(bentoName);
     } finally {
@@ -70,4 +71,5 @@ public class TestMojos {
       ).execute();
     }
   }
+
 }
